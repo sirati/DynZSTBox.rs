@@ -65,3 +65,27 @@ fn main() {
     println!("dyn_ref2 = {:?}, size_of_val(dyn_ref2) = {}", dyn_ref2, size_of_val(dyn_ref2));
 
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::vec::DynZSTVec;
+    use super::*;
+
+    #[test]
+    fn test_debug_zst() {
+        let zst = ZST;
+        let dynz: DynZSTBox<dyn DebugZST> = DynZSTBox::new(zst);
+        assert_eq!(dynz.foo(), "test".to_string());
+        assert_eq!(dynz.foo2(), "ZST".to_string());
+    }
+
+    #[test]
+    fn test_vec() {
+        let vec = DynZSTVec::from([&ZST as &dyn DebugZST, &ZST2, &ZST]);
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec[0].foo(), "test".to_string());
+        assert_eq!(vec[1].foo2(), "ZST2".to_string());
+        assert_eq!(vec[2].foo2(), "ZST1".to_string());
+
+    }
+}

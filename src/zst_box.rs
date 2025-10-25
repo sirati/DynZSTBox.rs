@@ -18,16 +18,69 @@ where
     _marker_dyn: PhantomData<&'trait_lifetime TDyn>,
 }
 
-//conflicting impl in core?
-impl<'trait_lifetime, T, TDyn> From<&T> for DynZSTLifetime<'trait_lifetime, TDyn>
+
+// impl<'trait_lifetime, T, TDyn> From<&T> for DynZSTLifetime<'trait_lifetime, TDyn>
+// where
+//     <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+//     TDyn: ?Sized + Pointee + 'trait_lifetime,
+//     T: Unsize<TDyn> + IsZeroSizedExt + 'trait_lifetime,
+//     <T as Pointee>::Metadata: SameType<()>,
+// {
+//     fn from(value: &T) -> Self {
+//         Self::new(*value)
+//     }
+// }
+
+trait IntoZSTBox<'trait_lifetime, TDyn>
+where
+    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee + 'trait_lifetime,
+{
+    fn into_zst_box(&self) -> DynZSTLifetime<'trait_lifetime, TDyn>;
+}
+impl<'trait_lifetime, T, TDyn> IntoZSTBox<'trait_lifetime, TDyn> for T
 where
     <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
     TDyn: ?Sized + Pointee + 'trait_lifetime,
     T: Unsize<TDyn> + IsZeroSizedExt + 'trait_lifetime,
     <T as Pointee>::Metadata: SameType<()>,
 {
-    fn from(value: &T) -> Self {
-        Self::new(*value)
+
+    fn into_zst_box(&self) -> DynZSTLifetime<'trait_lifetime, TDyn> {
+        DynZSTLifetime::with_dyn(self)
+    }
+}
+
+impl<'trait_lifetime, TDyn> From<&dyn IntoZSTBox<'trait_lifetime, TDyn>> for DynZSTLifetime<'trait_lifetime, TDyn>
+where
+    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee + 'trait_lifetime,
+{
+    fn from(value: &dyn IntoZSTBox<'trait_lifetime, TDyn>) -> Self {
+        value.into_zst_box()
+    }
+}
+
+
+
+
+impl<'trait_lifetime, TDyn> From<&TDyn> for DynZSTLifetime<'trait_lifetime, TDyn>
+where
+    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee + 'trait_lifetime,
+{
+    fn from(value: &TDyn) -> Self {
+        Self::with_dyn(value)
+    }
+}
+
+impl<'trait_lifetime, TDyn> From<Box<TDyn>> for DynZSTLifetime<'trait_lifetime, TDyn>
+where
+    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee + 'trait_lifetime,
+{
+    fn from(value: Box<TDyn>) -> Self {
+        Self::with_dyn(&*value)
     }
 }
 
@@ -62,8 +115,11 @@ where
     where
         T: Unsize<TDyn> + IsZeroSizedExt + 'trait_lifetime,
     {
-        let tdyn: &TDyn = &value;
-        let ptr_tdyn = tdyn as *const TDyn;
+        Self::with_dyn(&value)
+    }
+
+    pub fn with_dyn(value: &TDyn) -> Self {
+        let ptr_tdyn = value as *const TDyn;
         let dyn_meta = metadata(ptr_tdyn);
 
         DynZSTLifetime::<TDyn> {

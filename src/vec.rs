@@ -185,6 +185,21 @@ where
     }
 }
 
+impl<TDyn, const N: usize> From<[&TDyn; N]> for DynZSTVec<TDyn>
+where
+    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee + 'static,
+{
+    fn from(arr: [&TDyn; N]) -> Self {
+        let mut result = Self::with_capacity(N);
+        for item in arr {
+            result.push(item);
+        }
+
+        result
+    }
+}
+
 // From Box<TDyn> if Box<TDyn> can be converted into DynZSTBox<TDyn>
 impl<TDyn> From<Box<TDyn>> for DynZSTVec<TDyn>
 where
