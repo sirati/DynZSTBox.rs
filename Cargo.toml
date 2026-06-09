@@ -1,7 +1,22 @@
 [package]
+name = "dynzst"
 version = "0.1.0"
 edition = "2021"
-name = "dynzst"
+description = "Store and collect trait-object metadata for zero-sized types."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/sirati/DynZSTBox.rs"
+homepage = "https://github.com/sirati/DynZSTBox.rs"
+documentation = "https://docs.rs/dynzst"
+readme = "README.md"
+keywords = ["zst", "dyn", "trait-objects", "nightly"]
+categories = ["data-structures", "rust-patterns"]
+exclude = [
+    ".direnv/",
+    ".envrc",
+    "devel.nix",
+    "flake.lock",
+    "flake.nix",
+]
 
 
 [dependencies]
