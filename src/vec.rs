@@ -1,9 +1,56 @@
-use std::ops::{Deref, Index};
-use std::ptr::{DynMetadata, Pointee};
-use std::marker::PhantomData;
 use crate::same_type::SameType;
 use crate::zst_box::DynZSTBox;
+use std::marker::PhantomData;
+use std::ops::{Deref, Index};
+use std::ptr::{DynMetadata, Pointee};
 
+/// Vector-like storage for dynamic zero-sized trait objects.
+///
+/// `DynZSTVec<TDyn>` stores a `Vec<DynZSTBox<TDyn>>`. Each element is therefore
+/// only the metadata needed to reconstruct a shared `&TDyn`; no concrete
+/// element storage is allocated.
+///
+/// This is useful when the list should preserve which zero-sized implementor
+/// was inserted while still presenting every element through the same dynamic
+/// trait-object interface.
+///
+/// ```rust
+/// #![feature(generic_const_exprs)]
+/// #![feature(ptr_metadata)]
+/// #![feature(unsize)]
+///
+/// use dynzst::{vec::DynZSTVec, IsZeroSized, IsZeroSizedExt};
+///
+/// trait Step: IsZeroSized {
+///     fn label(&self) -> &'static str;
+/// }
+///
+/// trait StepImpl {
+///     const LABEL: &'static str;
+/// }
+///
+/// impl<T: IsZeroSizedExt + StepImpl> Step for T {
+///     fn label(&self) -> &'static str {
+///         T::LABEL
+///     }
+/// }
+///
+/// #[derive(Clone, Copy)]
+/// struct Parse;
+/// impl StepImpl for Parse {
+///     const LABEL: &'static str = "parse";
+/// }
+///
+/// #[derive(Clone, Copy)]
+/// struct Emit;
+/// impl StepImpl for Emit {
+///     const LABEL: &'static str = "emit";
+/// }
+///
+/// let steps = DynZSTVec::from([&Parse as &dyn Step, &Emit]);
+/// let labels: Vec<_> = steps.iter().map(|step| step.label()).collect();
+/// assert_eq!(labels, ["parse", "emit"]);
+/// ```
 pub struct DynZSTVec<TDyn>
 where
     <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
@@ -17,59 +64,70 @@ where
     <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
     TDyn: ?Sized + Pointee + 'static,
 {
+    /// Create an empty collection.
     pub fn new() -> Self {
         Self { inner: Vec::new() }
     }
 
-    /// Create with capacity.
+    /// Create an empty collection with capacity for at least `cap` elements.
     pub fn with_capacity(cap: usize) -> Self {
         Self {
             inner: Vec::with_capacity(cap),
         }
     }
 
-    /// Push an element (accepts anything convertible Into<DynZSTBox<dyn DebugZST>>)
+    /// Append an element to the collection.
+    ///
+    /// The item can be any type that converts into [`DynZSTBox<TDyn>`], such
+    /// as an existing metadata handle, a boxed dynamic trait object, or a
+    /// dynamic reference supported by the crate's conversion impls.
     pub fn push(&mut self, item: impl Into<DynZSTBox<TDyn>>) {
         self.inner.push(item.into());
     }
 
-    /// Moves all the elements of other into self, leaving other empty.
+    /// Move all elements from `other` into `self`, leaving `other` empty.
     pub fn append(&mut self, other: &mut Self) {
         self.inner.append(&mut other.inner);
     }
 
-    /// Insert at index and return a reference to the inserted element.
+    /// Insert an element at `index` and return a reference to the inserted item.
+    ///
+    /// Panics if `index` is greater than the current length, matching
+    /// [`Vec::insert`].
     pub fn insert(&mut self, index: usize, item: impl Into<DynZSTBox<TDyn>>) -> &TDyn {
         self.inner.insert(index, item.into());
         // safe because we just inserted
         self.get(index).unwrap()
     }
 
-    /// Get an element by index as `&dyn DebugZST`.
+    /// Get an element by index.
+    ///
+    /// The returned reference is reconstructed from the stored metadata.
     pub fn get(&self, index: usize) -> Option<&TDyn> {
         self.inner.get(index).map(|b| b.deref())
     }
 
-    /// Number of elements.
+    /// Return the number of elements in the collection.
     pub fn len(&self) -> usize {
         self.inner.len()
     }
 
-    /// True if empty.
+    /// Return `true` if the collection contains no elements.
     pub fn is_empty(&self) -> bool {
         self.inner.is_empty()
     }
 
-    /// Clear all elements.
+    /// Remove all elements from the collection.
     pub fn clear(&mut self) {
         self.inner.clear();
     }
 
-    /// Iterator over `&dyn DebugZST`.
+    /// Iterate over shared references to the stored dynamic zero-sized objects.
+    ///
+    /// Each item is reconstructed from the metadata stored at that position.
     pub fn iter(&self) -> impl Iterator<Item = &TDyn> + '_ {
         self.inner.iter().map(|b| b.deref())
     }
-
 }
 
 // Allow indexing like vec[idx] -> &dyn DebugZST
@@ -82,8 +140,12 @@ where
 
     fn index(&self, index: usize) -> &Self::Output {
         match self.get(index) {
-            None => panic!("Index {} out of bounds for DynZSTVec of length {}", index, self.len()),
-            Some(result) => result
+            None => panic!(
+                "Index {} out of bounds for DynZSTVec of length {}",
+                index,
+                self.len()
+            ),
+            Some(result) => result,
         }
     }
 }
@@ -229,6 +291,10 @@ where
 }
 
 // Iterator over &DynZSTVec -> yields &TDyn
+/// Shared iterator over a [`DynZSTVec`].
+///
+/// The iterator yields `&TDyn` values reconstructed from each stored metadata
+/// handle.
 pub struct Iter<'a, TDyn>
 where
     TDyn: ?Sized + Pointee + 'static,
@@ -273,6 +339,11 @@ where
 
 // Iterator over &mut DynZSTVec -> yields a MutAccessor that remembers the index.
 // The MutAccessor lets you read via Deref and replace the slot via `replace`.
+/// Mutable-position accessor yielded by [`IterMut`].
+///
+/// Dynamic zero-sized objects do not expose mutable references to concrete
+/// values. Instead, this accessor allows reading the current dynamic reference
+/// and replacing the metadata handle stored at the current position.
 pub struct MutAccessor<'a, TDyn>
 where
     TDyn: ?Sized + Pointee + 'static,
@@ -288,7 +359,11 @@ where
     TDyn: ?Sized + Pointee + 'static,
     <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
 {
-    /// Replace the element at this accessor's index with `item` and return the old DynZSTBox.
+    /// Replace this element and return the previous metadata handle.
+    ///
+    /// This changes which zero-sized implementor is represented at this slot.
+    /// It does not mutate a concrete object because no concrete object storage
+    /// exists in the collection.
     pub fn replace(self, item: impl Into<DynZSTBox<TDyn>>) -> DynZSTBox<TDyn> {
         // Safety: `vec` points to the Vec owned by the IterMut; by construction no other
         // overlapping mutable access exists for this index while the accessor is alive.
@@ -296,10 +371,10 @@ where
         std::mem::replace(&mut v[self.index], item.into())
     }
 
-    /// Get an immutable reference to the element.
+    /// Get a shared reference to the current element.
     pub fn get(&self) -> &TDyn {
         // Safety: similar reasoning as above for reading.
-        let v = unsafe { & *self.vec };
+        let v = unsafe { &*self.vec };
         &v[self.index]
     }
 }
@@ -317,6 +392,12 @@ where
 }
 
 // Iteration-by-index that yields MutAccessor; uses raw pointer to avoid multiple &mut borrows.
+/// Mutable iterator over a [`DynZSTVec`].
+///
+/// Each yielded [`MutAccessor`] can inspect or replace one stored metadata
+/// handle. It deliberately does not yield `&mut TDyn`: the collection stores
+/// metadata, not concrete values, and the reconstructed trait objects are
+/// shared zero-sized references.
 pub struct IterMut<'a, TDyn>
 where
     TDyn: ?Sized + Pointee + 'static,
