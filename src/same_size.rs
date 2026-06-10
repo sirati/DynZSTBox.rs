@@ -3,7 +3,7 @@ use std::ptr::{metadata, Pointee};
 
 trait IsZeroSizedSealed {}
 
-/// Marker trait for types whose size is exactly zero bytes.
+/// Marker trait for supported zero-sized types.
 ///
 /// The crate implements this trait for every sized type `T` for which
 /// `size_of::<T>() == 0`. The implementation uses a const-generic array bound,

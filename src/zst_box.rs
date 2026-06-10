@@ -1,5 +1,4 @@
 use crate::same_size::IsZeroSizedExt;
-use crate::same_type::SameType;
 use std::fmt::{Debug, Display, Formatter};
 use std::marker::{PhantomData, Unsize};
 use std::ops::Deref;
@@ -26,23 +25,22 @@ use std::ptr::{from_raw_parts, metadata, DynMetadata, Pointee};
 ///
 /// # Safety model
 ///
-/// The public constructors require either a zero-sized concrete value
-/// ([`new`](Self::new)) or an existing dynamic reference ([`with_dyn`](Self::with_dyn)).
-/// Dereferencing never reads from the synthetic data pointer; it only lets the
-/// trait-object vtable dispatch methods for a type whose value has no storage.
+/// [`new`](Self::new) proves the zero-sized invariant through
+/// [`IsZeroSizedExt`]. [`with_dyn`](Self::with_dyn) starts from an
+/// already-erased dynamic reference and checks the vtable size before storing
+/// the metadata.
 pub struct DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
-    dyn_meta: <TDyn as Pointee>::Metadata,
+    dyn_meta: DynMetadata<TDyn>,
     _marker_dyn: PhantomData<&'trait_lifetime TDyn>,
 }
 
 // impl<'trait_lifetime, T, TDyn> From<&T> for DynZSTLifetime<'trait_lifetime, TDyn>
 // where
 //     <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-//     TDyn: ?Sized + Pointee + 'trait_lifetime,
+//     TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 //     T: Unsize<TDyn> + IsZeroSizedExt + 'trait_lifetime,
 //     <T as Pointee>::Metadata: SameType<()>,
 // {
@@ -53,17 +51,14 @@ where
 
 trait IntoZSTBox<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
     fn into_zst_box(&self) -> DynZSTLifetime<'trait_lifetime, TDyn>;
 }
 impl<'trait_lifetime, T, TDyn> IntoZSTBox<'trait_lifetime, TDyn> for T
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
-    T: Unsize<TDyn> + IsZeroSizedExt + 'trait_lifetime,
-    <T as Pointee>::Metadata: SameType<()>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
+    T: Unsize<TDyn> + IsZeroSizedExt + Pointee<Metadata = ()> + 'trait_lifetime,
 {
     fn into_zst_box(&self) -> DynZSTLifetime<'trait_lifetime, TDyn> {
         DynZSTLifetime::with_dyn(self)
@@ -73,8 +68,7 @@ where
 impl<'trait_lifetime, TDyn> From<&dyn IntoZSTBox<'trait_lifetime, TDyn>>
     for DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
     fn from(value: &dyn IntoZSTBox<'trait_lifetime, TDyn>) -> Self {
         value.into_zst_box()
@@ -83,8 +77,7 @@ where
 
 impl<'trait_lifetime, TDyn> From<&TDyn> for DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
     fn from(value: &TDyn) -> Self {
         Self::with_dyn(value)
@@ -93,8 +86,7 @@ where
 
 impl<'trait_lifetime, TDyn> From<Box<TDyn>> for DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
     fn from(value: Box<TDyn>) -> Self {
         Self::with_dyn(&*value)
@@ -103,8 +95,7 @@ where
 
 impl<'trait_lifetime, TDyn> Debug for DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime + Debug,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime + Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         (&self.deref() as &dyn Debug).fmt(f)
@@ -113,8 +104,7 @@ where
 
 impl<'trait_lifetime, TDyn> Display for DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime + Display,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime + Display,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         (&self.deref() as &dyn Display).fmt(f)
@@ -129,8 +119,7 @@ pub type DynZSTBox<TDyn> = DynZSTLifetime<'static, TDyn>;
 
 impl<'trait_lifetime, TDyn> DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
     /// Create a metadata-only handle from a zero-sized concrete value.
     ///
@@ -155,10 +144,21 @@ where
     /// metadata.
     ///
     /// This constructor is useful when coercion to the dynamic type has already
-    /// happened, for example when building from `&dyn Trait`.
+    /// happened, for example when building from `&dyn Trait`. It uses the
+    /// dynamic vtable to check the erased value's size before storing the
+    /// metadata.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the erased concrete value behind `value` is not zero-sized.
     pub fn with_dyn(value: &TDyn) -> Self {
         let ptr_tdyn = value as *const TDyn;
         let dyn_meta = metadata(ptr_tdyn);
+        let dyn_size = dyn_meta.size_of();
+        assert_eq!(
+            dyn_size, 0,
+            "DynZSTLifetime requires a zero-sized dynamic value, got size {dyn_size}"
+        );
 
         DynZSTLifetime::<TDyn> {
             dyn_meta,
@@ -169,20 +169,20 @@ where
 
 impl<'trait_lifetime, TDyn> Deref for DynZSTLifetime<'trait_lifetime, TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'trait_lifetime,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'trait_lifetime,
 {
     type Target = TDyn;
 
     fn deref(&self) -> &Self::Target {
         // Safety: `dyn_meta` was captured from a valid `TDyn` reference. The
-        // erased concrete type is zero-sized when built through `new`, and
-        // `with_dyn` preserves the caller-provided dynamic metadata. Shared
-        // references to zero-sized values do not require backing storage to be
-        // read or written; the data pointer only needs to be non-null and
-        // aligned well enough for the reconstructed ZST reference. `1 << 15` is
-        // a power-of-two address chosen to satisfy ordinary ZST alignments.
-        let zst_ptr: *const () = ptr::without_provenance(1 << 15);
+        // erased concrete type is either statically proven zero-sized by `new`
+        // or dynamically checked by `with_dyn`. Shared references to zero-sized
+        // values do not require backing storage to be read or written; the data
+        // pointer only needs to be non-null and aligned for the erased concrete
+        // type. The vtable records that alignment. Rust alignments are powers
+        // of two, so using the alignment itself as the address gives a suitably
+        // aligned synthetic pointer.
+        let zst_ptr: *const () = ptr::without_provenance(self.dyn_meta.align_of());
         let dyn_ptr: *const TDyn = from_raw_parts(zst_ptr, self.dyn_meta);
         unsafe { &*dyn_ptr }
     }

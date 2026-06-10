@@ -1,46 +1,45 @@
 # dynzst
 
-`dynzst` provides compact trait-object wrappers for zero-sized types.
+`dynzst` provides a thin-pointer for dyn Trait + IsZeroSized. With other words
+it allows storing ZST with dynamic dispatch in only half the bytes, namely one usize.
 
-Use it when the concrete value behind a trait object carries no data and all
-useful behavior is encoded in the type and vtable: marker states, type-level
-plugins, capabilities, witnesses, and similar zero-sized objects that still
-need dynamic dispatch.
+This is useful for marker states, type-level plugins, witnesses, capabilities,
+and other ZSTs where the type does all the work but you still want dynamic
+dispatch.
 
-A normal `Box<dyn Trait>` stores a data pointer plus metadata such as a vtable
-pointer. For a zero-sized implementor, there are no instance bytes to store.
-`DynZSTBox` therefore stores only the metadata. When dereferenced, it combines
-that metadata with a synthetic non-null pointer and produces a shared
-`&dyn Trait`.
+A normal `&dyn Trait` or `Box<dyn Trait>` is two words: data pointer and vtable.
+For a ZST the data pointer is not carrying data. `DynZSTBox` stores the vtable
+metadata only. On deref it builds a temporary data pointer with the alignment
+from the vtable and combines both back into `&dyn Trait`.
 
-The crate also includes `DynZSTVec`, a vector-like collection that stores one
-metadata handle per element.
+`DynZSTVec` is the same idea for many values: a `Vec` of vtables instead of a
+`Vec` of fat pointers.
 
 ## Safety model
 
-The unsafe operation in this crate is reconstructing a shared trait-object
-reference from stored metadata and a synthetic data pointer. The public API
-keeps this sound by enforcing these invariants:
+The unsafe part is reconstructing `&dyn Trait` from only vtable metadata.
+`DynZSTBox::new` proves at compile time that the concrete type is a ZST.
+`DynZSTBox::with_dyn` is for already-erased values and checks the vtable size at
+runtime. If the erased value is not size zero, it panics before storing the
+metadata.
 
-- concrete values passed to `DynZSTBox::new` must implement `IsZeroSizedExt`,
-  which means they are sized, `Copy`, and have size `0`;
-- the wrapper stores only trait-object metadata for the requested dynamic type;
-- dereferencing creates shared references only, never mutable references;
-- zero-sized values have no instance bytes, so dereferencing does not read from
-  or write to the synthetic pointer;
-- the synthetic pointer is non-null and chosen with broad alignment for
-  reconstructing a zero-sized reference.
+- `DynZSTBox::new` requires `IsZeroSizedExt`, so the concrete type is sized,
+  `Copy`, and `size_of::<T>() == 0`.
+- `DynZSTBox::with_dyn` requires the erased vtable size to be `0`.
+- The stored value is only `DynMetadata<dyn Trait>`.
+- Deref does not read any instance bytes, because there are none.
+- The synthetic pointer is non-null and aligned with `DynMetadata::align_of`.
 
-Methods called through the reconstructed trait object may use the vtable and
-type identity, but they must not rely on instance fields because zero-sized
-values have none.
+Methods may use the vtable and the concrete type. They cannot rely on instance
+fields, because a ZST has no instance fields with storage.
 
 ## Nightly Rust
 
-This crate currently requires nightly Rust. In particular, it uses the
-incomplete `generic_const_exprs` feature only to let the compiler prove
-`size_of::<T>() == 0` at compile time for `IsZeroSized`. The metadata and
-unsizing APIs used by the crate are also nightly-only today.
+This crate requires nightly Rust.
+
+The incomplete `generic_const_exprs` feature is only used to let the compiler
+prove `size_of::<T>() == 0` for `IsZeroSized`. The pointer metadata and unsizing
+APIs are also nightly-only today.
 
 With the included Nix development shell:
 

@@ -1,8 +1,8 @@
 [package]
 name = "dynzst"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
-description = "Store and collect trait-object metadata for zero-sized types."
+description = "A thin pointer for dyn Trait + IsZeroSized."
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/sirati/DynZSTBox.rs"
 homepage = "https://github.com/sirati/DynZSTBox.rs"

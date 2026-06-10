@@ -1,16 +1,17 @@
-//! Trait-object containers for zero-sized types.
+//! Thin pointers for `dyn Trait + IsZeroSized`.
 //!
-//! `dynzst` is for APIs where the concrete value of a trait object carries no
-//! data and all useful behavior is encoded in its type and vtable. Typical
-//! examples are marker states, type-level plugins, capabilities, and other
-//! zero-sized witnesses that still need dynamic dispatch.
+//! `dynzst` stores ZSTs with dynamic dispatch in one word. In other words,
+//! `DynZSTBox<dyn Trait>` keeps only the vtable metadata for a
+//! `dyn Trait + IsZeroSized` value.
 //!
-//! A normal `Box<dyn Trait>` stores two things: a data pointer and metadata
-//! such as a vtable pointer. For a zero-sized implementor, the data pointer
-//! does not point at meaningful storage because the value occupies no bytes.
-//! [`DynZSTBox`] therefore stores only the metadata part. When dereferenced, it
-//! combines that metadata with a synthetic, non-null, well-aligned pointer and
-//! produces a shared `&dyn Trait`.
+//! A normal `&dyn Trait` is two words: data pointer and vtable. For a ZST the
+//! data pointer is not carrying data. [`DynZSTBox`] stores the vtable metadata
+//! only. On deref it builds a temporary data pointer with the alignment from
+//! the vtable and combines both back into `&dyn Trait`.
+//!
+//! Use it for marker states, type-level plugins, witnesses, capabilities, and
+//! other ZSTs where the type does all the work but you still want dynamic
+//! dispatch.
 //!
 //! # Defining an object-safe zero-sized trait
 //!
@@ -55,29 +56,27 @@
 //!
 //! # Why dereferencing is sound
 //!
-//! The unsafe operation in this crate is reconstructing a shared reference from
-//! stored metadata and a synthetic data pointer. The public constructors keep
-//! that operation sound by enforcing these invariants:
+//! The unsafe part is reconstructing `&dyn Trait` from only vtable metadata.
+//! [`DynZSTLifetime::new`] proves at compile time that the concrete type is a
+//! ZST. [`DynZSTLifetime::with_dyn`] is for already-erased values and checks
+//! the vtable size at runtime. If the erased value is not size zero, it panics
+//! before storing the metadata.
 //!
-//! - the concrete type used to create a [`DynZSTLifetime`] must implement
-//!   [`IsZeroSizedExt`], so it is sized, `Copy`, and has size `0`;
-//! - the wrapper stores only trait-object metadata for `TDyn`, enforced through
-//!   the [`SameType`] metadata bounds;
-//! - dereferencing only creates shared references, never mutable references, so
-//!   there is no mutable access to aliased synthetic storage;
-//! - because the concrete value is zero-sized, no bytes are read from or written
-//!   to the synthetic pointer;
-//! - the synthetic pointer is non-null and chosen with broad alignment for the
-//!   zero-sized reference reconstruction.
+//! - [`DynZSTLifetime::new`] requires [`IsZeroSizedExt`], so the concrete type
+//!   is sized, `Copy`, and `size_of::<T>() == 0`.
+//! - [`DynZSTLifetime::with_dyn`] requires the erased vtable size to be `0`.
+//! - The stored value is only [`DynMetadata`](std::ptr::DynMetadata).
+//! - Deref does not read any instance bytes, because there are none.
+//! - The synthetic pointer is non-null and aligned with
+//!   [`DynMetadata::align_of`](std::ptr::DynMetadata::align_of).
 //!
-//! As a result, method calls dispatched through the reconstructed trait object
-//! can use the vtable and type identity, but must not depend on reading
-//! instance fields: zero-sized values have none.
+//! Methods may use the vtable and the concrete type. They cannot rely on
+//! instance fields, because a ZST has no instance fields with storage.
 //!
-//! This crate requires nightly Rust. In particular, it uses the incomplete
-//! `generic_const_exprs` feature only to let the compiler prove
-//! `size_of::<T>() == 0` at compile time for [`IsZeroSized`]. The metadata and
-//! unsizing APIs used by the crate are also nightly-only today.
+//! This crate requires nightly Rust. The incomplete `generic_const_exprs`
+//! feature is only used to let the compiler prove `size_of::<T>() == 0` for
+//! [`IsZeroSized`]. The pointer metadata and unsizing APIs are also
+//! nightly-only today.
 
 #![warn(missing_docs)]
 #![allow(incomplete_features)]
@@ -116,10 +115,27 @@ mod tests {
     }
     impl<T: IsZeroSizedExt + Debug> DebugZST for T {}
 
+    pub trait AlignCheck: IsZeroSized {
+        fn addr_mod_align(&self) -> usize;
+        fn expected_align(&self) -> usize;
+    }
+    impl<T: IsZeroSizedExt> AlignCheck for T {
+        fn addr_mod_align(&self) -> usize {
+            (self as *const T as usize) % std::mem::align_of::<T>()
+        }
+
+        fn expected_align(&self) -> usize {
+            std::mem::align_of::<T>()
+        }
+    }
+
     #[derive(Debug, Copy, Clone)]
     struct ZST;
     #[derive(Debug, Copy, Clone)]
     struct ZST2;
+    #[repr(align(65536))]
+    #[derive(Debug, Copy, Clone)]
+    struct OverAlignedZST;
 
     #[test]
     fn test_debug_zst() {
@@ -136,5 +152,23 @@ mod tests {
         assert_eq!(vec[0].foo(), "test".to_string());
         assert_eq!(vec[1].foo2(), "ZST2".to_string());
         assert_eq!(vec[2].foo2(), "ZST".to_string());
+    }
+
+    #[test]
+    fn test_overaligned_zst() {
+        let dynz: DynZSTBox<dyn DebugZST> = DynZSTBox::new(OverAlignedZST);
+        assert_eq!(dynz.foo2(), "OverAlignedZST".to_string());
+
+        let aligned: DynZSTBox<dyn AlignCheck> = DynZSTBox::new(OverAlignedZST);
+        assert_eq!(aligned.expected_align(), 65536);
+        assert_eq!(aligned.addr_mod_align(), 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "requires a zero-sized dynamic value")]
+    fn with_dyn_rejects_non_zst_dynamic_value() {
+        let value = String::from("not zst");
+        let dyn_value: &dyn Debug = &value;
+        let _ = DynZSTLifetime::<dyn Debug>::with_dyn(dyn_value);
     }
 }

@@ -1,4 +1,3 @@
-use crate::same_type::SameType;
 use crate::zst_box::DynZSTBox;
 use std::marker::PhantomData;
 use std::ops::{Deref, Index};
@@ -53,16 +52,14 @@ use std::ptr::{DynMetadata, Pointee};
 /// ```
 pub struct DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     inner: Vec<DynZSTBox<TDyn>>,
 }
 
 impl<TDyn> DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     /// Create an empty collection.
     pub fn new() -> Self {
@@ -133,8 +130,7 @@ where
 // Allow indexing like vec[idx] -> &dyn DebugZST
 impl<TDyn> Index<usize> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     type Output = TDyn;
 
@@ -153,8 +149,7 @@ where
 // PartialEq / Eq by delegating to inner Vec
 impl<TDyn> PartialEq for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     DynZSTBox<TDyn>: PartialEq,
 {
     fn eq(&self, other: &Self) -> bool {
@@ -163,8 +158,7 @@ where
 }
 impl<TDyn> Eq for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     DynZSTBox<TDyn>: Eq,
 {
 }
@@ -172,8 +166,7 @@ where
 // Clone by cloning the inner Vec
 impl<TDyn> Clone for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     DynZSTBox<TDyn>: Clone,
 {
     fn clone(&self) -> Self {
@@ -186,8 +179,7 @@ where
 // Extend from any item convertible Into<DynZSTBox<TDyn>>
 impl<TDyn, U> Extend<U> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     U: Into<DynZSTBox<TDyn>>,
 {
     fn extend<I: IntoIterator<Item = U>>(&mut self, iter: I) {
@@ -200,8 +192,7 @@ where
 // From a single DynZSTBox
 impl<TDyn> From<DynZSTBox<TDyn>> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     fn from(b: DynZSTBox<TDyn>) -> Self {
         Self { inner: vec![b] }
@@ -211,8 +202,7 @@ where
 // From any Vec<U> where U can be converted into DynZSTBox<TDyn>
 impl<TDyn, U> From<Vec<U>> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     U: Into<DynZSTBox<TDyn>>,
 {
     fn from(v: Vec<U>) -> Self {
@@ -224,8 +214,7 @@ where
 // From a slice reference (requires Clone to duplicate elements before conversion)
 impl<TDyn, U> From<&[U]> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     U: Clone + Into<DynZSTBox<TDyn>>,
 {
     fn from(slice: &[U]) -> Self {
@@ -237,8 +226,7 @@ where
 // From an array reference (requires Clone)
 impl<TDyn, U, const N: usize> From<&[U; N]> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     U: Clone + Into<DynZSTBox<TDyn>>,
 {
     fn from(arr: &[U; N]) -> Self {
@@ -249,8 +237,7 @@ where
 
 impl<TDyn, const N: usize> From<[&TDyn; N]> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     fn from(arr: [&TDyn; N]) -> Self {
         let mut result = Self::with_capacity(N);
@@ -265,8 +252,7 @@ where
 // From Box<TDyn> if Box<TDyn> can be converted into DynZSTBox<TDyn>
 impl<TDyn> From<Box<TDyn>> for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
     Box<TDyn>: Into<DynZSTBox<TDyn>>,
 {
     fn from(b: Box<TDyn>) -> Self {
@@ -279,8 +265,7 @@ where
 // IntoIterator for owned DynZSTVec -> yields DynZSTBox<TDyn>
 impl<TDyn> IntoIterator for DynZSTVec<TDyn>
 where
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
-    TDyn: ?Sized + Pointee + 'static,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     type Item = DynZSTBox<TDyn>;
     type IntoIter = std::vec::IntoIter<DynZSTBox<TDyn>>;
@@ -297,16 +282,14 @@ where
 /// handle.
 pub struct Iter<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     inner: std::slice::Iter<'a, DynZSTBox<TDyn>>,
 }
 
 impl<'a, TDyn> Iterator for Iter<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     type Item = &'a TDyn;
 
@@ -320,8 +303,7 @@ where
 }
 impl<'a, TDyn> DoubleEndedIterator for Iter<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.inner.next_back().map(|b| b.deref())
@@ -329,8 +311,7 @@ where
 }
 impl<'a, TDyn> ExactSizeIterator for Iter<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     fn len(&self) -> usize {
         self.inner.len()
@@ -346,8 +327,7 @@ where
 /// and replacing the metadata handle stored at the current position.
 pub struct MutAccessor<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     vec: *mut Vec<DynZSTBox<TDyn>>,
     index: usize,
@@ -356,8 +336,7 @@ where
 
 impl<'a, TDyn> MutAccessor<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     /// Replace this element and return the previous metadata handle.
     ///
@@ -381,8 +360,7 @@ where
 
 impl<'a, TDyn> Deref for MutAccessor<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     type Target = TDyn;
 
@@ -400,8 +378,7 @@ where
 /// shared zero-sized references.
 pub struct IterMut<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     vec: *mut Vec<DynZSTBox<TDyn>>,
     next: usize,
@@ -411,8 +388,7 @@ where
 
 impl<'a, TDyn> Iterator for IterMut<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     type Item = MutAccessor<'a, TDyn>;
 
@@ -438,8 +414,7 @@ where
 
 impl<'a, TDyn> DoubleEndedIterator for IterMut<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     fn next_back(&mut self) -> Option<Self::Item> {
         if self.next >= self.end {
@@ -457,8 +432,7 @@ where
 
 impl<'a, TDyn> ExactSizeIterator for IterMut<'a, TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     fn len(&self) -> usize {
         self.end.saturating_sub(self.next)
@@ -468,8 +442,7 @@ where
 // IntoIterator for &mut DynZSTVec -> yields MutAccessor per element
 impl<'a, TDyn> IntoIterator for &'a mut DynZSTVec<TDyn>
 where
-    TDyn: ?Sized + Pointee + 'static,
-    <TDyn as Pointee>::Metadata: SameType<DynMetadata<TDyn>>,
+    TDyn: ?Sized + Pointee<Metadata = DynMetadata<TDyn>> + 'static,
 {
     type Item = MutAccessor<'a, TDyn>;
     type IntoIter = IterMut<'a, TDyn>;
